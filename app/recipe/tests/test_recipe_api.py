@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 from core.models import (
     Recipe,
     Tag,
+    Ingredient,
 )
 
 from recipe.serializers import (
@@ -247,6 +248,89 @@ class PrivateRecipeApiTests(TestCase):
         recipe.tags.add(tag)
 
         payload = {'tags': []}
+        url = detail_url(recipe.id)
+        res = self.client.patch(url, payload, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        recipe.refresh_from_db()
+        self.assertEqual(recipe.tags.count(), 0)
+
+    def test_create_recipe_with_new_ingredients(self):
+        """Test creating a recipe with new ingredients"""
+        payload = {
+            'title': 'Cinnamon Rolls',
+            'time_minutes': 30,
+            'price': Decimal('2.50'),
+            'ingredients': [{'name': 'Cinnamon'}, {'name': 'Sugar'}]
+        }
+
+        res = self.client.post(RECIPES_URL, payload, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        recipes = Recipe.objects.filter(user=self.user)
+        self.assertEqual(recipes.count(), 1)
+        recipe = recipes[0]
+        self.assertEqual(recipe.ingredients.count(), 2)
+        self.assertTrue(recipe.ingredients.filter(name='Cinnamon').exists())
+        self.assertTrue(recipe.ingredients.filter(name='Sugar').exists())
+
+    def test_create_recipe_with_existing_ingredients(self):
+        """Test creating a recipe with existing ingredient"""
+        ingredient_cinnamon = Ingredient.objects.create(user=self.user, name='Cinnamon')
+        payload = {
+            'title': 'Pongal',
+            'time_minutes': 30,
+            'price': Decimal('2.50'),
+            'ingredients': [{'name': 'Cinnamon'}, {'name': 'Sugar'}]
+        }
+
+        res = self.client.post(RECIPES_URL, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        recipes = Recipe.objects.filter(user=self.user)
+        self.assertEqual(recipes.count(), 1)
+        recipe = recipes[0]
+        self.assertEqual(recipe.ingredients.count(), 2)
+        self.assertIn(ingredient_cinnamon, recipe.ingredients.all())
+        self.assertTrue(recipe.ingredients.filter(name='Cinnamon').exists())
+        self.assertTrue(recipe.ingredients.filter(name='Sugar').exists())
+
+    def test_create_ingredient_on_update(self):
+        """Test creating an ingredient when updating a recipe"""
+        recipe = create_recipe(user=self.user)
+
+        payload = {
+            'ingredients': [{'name': 'Cinnamon'}]
+        }
+        url = detail_url(recipe.id)
+        res = self.client.patch(url, payload, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        new_ingredient = Ingredient.objects.get(name='Cinnamon', user=self.user)
+        self.assertIn(new_ingredient, recipe.ingredients.all())
+
+    def test_update_recipe_assign_ingredient(self):
+        """test assigning an existing ingredient when updating a recipe"""
+        ingredient_cinnamon = Ingredient.objects.create(user=self.user, name='Cinnamon')
+        recipe = create_recipe(user=self.user)
+        recipe.ingredients.add(ingredient_cinnamon)
+
+        ingredient_sugar = Ingredient.objects.create(user=self.user, name='Sugar')
+        payload = {'ingredients': [{'name': 'Sugar'}]}
+        url = detail_url(recipe.id)
+        res = self.client.patch(url, payload, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        recipe.refresh_from_db()
+        self.assertIn(ingredient_sugar, recipe.ingredients.all())
+        self.assertNotIn(ingredient_cinnamon, recipe.ingredients.all())
+
+    def test_clear_recipe_ingredients(self):
+        """Test clearing a recipes ingredients."""
+        ingredient = Ingredient.objects.create(user=self.user, name='Cinnamon')
+        recipe = create_recipe(user=self.user)
+        recipe.ingredients.add(ingredient)
+
+        payload = {'ingredients': []}
         url = detail_url(recipe.id)
         res = self.client.patch(url, payload, format='json')
 
